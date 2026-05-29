@@ -1,4 +1,5 @@
 import os
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Depends
 from sqlalchemy import select
@@ -14,7 +15,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-@app.post("/upload")
+@app.post("/posts/upload")
 async def upload_file(
     file: UploadFile = File(...),
     caption: str = Form(...),
@@ -60,7 +61,7 @@ async def upload_file(
     return post
 
 
-@app.get("/feed")
+@app.get("/posts/feed")
 async def get_feed(session: AsyncSession = Depends(get_async_session)):
     result = await session.execute(select(Post).order_by(Post.created_at.desc()))
     
@@ -79,3 +80,30 @@ async def get_feed(session: AsyncSession = Depends(get_async_session)):
         })
 
     return {"posts": posts_data}
+
+@app.delete("/posts/{post_id}")
+async def delete_post(post_id: str, session: AsyncSession = Depends(get_async_session)):
+    try:
+        post_uuid = uuid.UUID(post_id)
+
+        result = await session.execute(select(Post).where(Post.id == post_uuid))
+        post = result.scalars().first()
+
+        if not post:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Post with id {post_id} not found"
+            )
+
+        await session.delete(post)
+        await session.commit()
+
+        return {
+            "success": True,
+            "message": "Post deleted successfully"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting post: {str(e)}"
+        )
